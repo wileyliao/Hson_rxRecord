@@ -32,19 +32,30 @@ for filename in os.listdir(log_dir):
                 try:
                     log = json.loads(line)
                     med_list = log.get("藥品列表", [])
+                    # 替換 for med in med_list: 區塊
                     for med in med_list:
                         drug_name = med.get("藥品名稱", "")
                         med_log_list = med.get("log", [])
                         sectno = extract_preferred_sectno(med_log_list)
+
+                        # ➤ 每個藥只計一次 TXN_QTY
+                        txn_qty = None
                         for rule in med_log_list:
                             fields = rule.get("所需欄位", {})
+                            if txn_qty is None and "TXN_QTY" in fields and str(fields["TXN_QTY"]).isdigit():
+                                txn_qty = int(fields["TXN_QTY"])
+
+                        if txn_qty is not None:
+                            icd = next((r.get("所需欄位", {}).get("ICD_CODE") for r in med_log_list if
+                                        "ICD_CODE" in r.get("所需欄位", {})), "None")
                             records.append({
                                 "藥袋編號": log.get("藥袋編號", ""),
                                 "NAME": drug_name,
-                                "ICD_CODE": fields.get("ICD_CODE", "None"),
+                                "ICD_CODE": icd,
                                 "SECTNO": sectno,
-                                "TXN_QTY": int(fields.get("TXN_QTY", "0")) if str(fields.get("TXN_QTY", "0")).isdigit() else 0
+                                "TXN_QTY": txn_qty
                             })
+
                 except json.JSONDecodeError:
                     continue
 
@@ -83,6 +94,7 @@ grouped = df.groupby(["ICD_CODE", "NAME"])["TXN_QTY"].sum().reset_index()
 icd_list = grouped["ICD_CODE"].unique().tolist()
 
 fig = go.Figure()
+
 
 # 預設第一筆 ICD_CODE 當作初始化
 initial_icd = icd_list[0]
